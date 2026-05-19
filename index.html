@@ -84,6 +84,12 @@
       gap: 15px;
     }
 
+    .header-tools {
+      display: grid;
+      gap: 10px;
+      min-width: min(360px, 100%);
+    }
+
     .mark {
       display: grid;
       place-items: center;
@@ -120,7 +126,6 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(82px, 1fr));
       gap: 10px;
-      min-width: min(360px, 100%);
     }
 
     .stat {
@@ -263,6 +268,52 @@
 
     .btn.full {
       width: 100%;
+    }
+
+    .share-row {
+      display: grid;
+      gap: 7px;
+    }
+
+    .share-row .btn {
+      min-height: 40px;
+      background: linear-gradient(135deg, var(--blue), var(--mint));
+      box-shadow: 0 10px 18px rgba(82, 167, 223, 0.2);
+    }
+
+    .share-status {
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .sync-status {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 7px;
+      color: var(--muted);
+      font-size: 13px;
+      min-height: 20px;
+    }
+
+    .sync-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--lemon);
+      box-shadow: 0 0 0 4px rgba(255, 212, 87, 0.2);
+    }
+
+    .sync-dot.cloud {
+      background: var(--mint);
+      box-shadow: 0 0 0 4px rgba(61, 191, 143, 0.18);
+    }
+
+    .sync-dot.error {
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.18);
     }
 
     .tabs {
@@ -469,6 +520,14 @@
       .stats {
         min-width: 0;
       }
+
+      .share-status {
+        text-align: left;
+      }
+
+      .sync-status {
+        justify-content: flex-start;
+      }
     }
 
     @media (max-width: 560px) {
@@ -524,18 +583,35 @@
           <p class="tagline">把想吃的小愿望排好队，吃到开心就给它打个分。</p>
         </div>
       </div>
-      <div class="stats" aria-label="清单统计">
-        <div class="stat">
-          <strong id="todoCount">0</strong>
-          <span>待吃</span>
+      <div class="header-tools">
+        <div class="stats" aria-label="清单统计">
+          <div class="stat">
+            <strong id="todoCount">0</strong>
+            <span>待吃</span>
+          </div>
+          <div class="stat">
+            <strong id="eatenCount">0</strong>
+            <span>已吃</span>
+          </div>
+          <div class="stat">
+            <strong id="avgRating">-</strong>
+            <span>平均评分</span>
+          </div>
         </div>
-        <div class="stat">
-          <strong id="eatenCount">0</strong>
-          <span>已吃</span>
-        </div>
-        <div class="stat">
-          <strong id="avgRating">-</strong>
-          <span>平均评分</span>
+        <div class="share-row">
+          <button class="btn" id="shareButton" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path>
+              <path d="M16 6l-4-4-4 4"></path>
+              <path d="M12 2v13"></path>
+            </svg>
+            复制分享链接
+          </button>
+          <div class="share-status" id="shareStatus" aria-live="polite"></div>
+          <div class="sync-status" id="syncStatus" aria-live="polite">
+            <span class="sync-dot" id="syncDot"></span>
+            <span id="syncText">本地模式</span>
+          </div>
         </div>
       </div>
     </header>
@@ -598,12 +674,19 @@
     </div>
   </template>
 
-  <script>
+  <script type="module">
     const STORAGE_KEY = "toEatFoods.v1";
+    const SUPABASE_URL = "https://ttsfoelvnebuonvpzizl.supabase.co";
+    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0c2ZvZWx2bmVidW9udnB6aXpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkxNDEzMzEsImV4cCI6MjA5NDcxNzMzMX0.W91PXbz4hoRqvCb_U57txqUaXaFj7rZ1sY9zhPdHN0I";
+
+    let supabase = null;
+    let realtimeChannel = null;
+    let cloudReady = false;
+
     const state = {
       view: "todo",
       search: "",
-      foods: loadFoods()
+      foods: loadInitialFoods()
     };
 
     const addForm = document.querySelector("#addForm");
@@ -614,15 +697,20 @@
     const todoCount = document.querySelector("#todoCount");
     const eatenCount = document.querySelector("#eatenCount");
     const avgRating = document.querySelector("#avgRating");
+    const shareButton = document.querySelector("#shareButton");
+    const shareStatus = document.querySelector("#shareStatus");
+    const syncStatus = document.querySelector("#syncStatus");
+    const syncDot = document.querySelector("#syncDot");
+    const syncText = document.querySelector("#syncText");
 
-    addForm.addEventListener("submit", (event) => {
+    addForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       const formData = new FormData(addForm);
       const name = String(formData.get("foodName") || "").trim();
 
       if (!name) return;
 
-      state.foods.unshift({
+      const newFood = {
         id: crypto.randomUUID(),
         name,
         place: String(formData.get("foodPlace") || "").trim(),
@@ -631,11 +719,10 @@
         createdAt: new Date().toISOString(),
         eatenDate: "",
         rating: ""
-      });
+      };
 
       addForm.reset();
-      saveFoods();
-      render();
+      await addFood(newFood);
     });
 
     tabs.forEach((tab) => {
@@ -648,6 +735,23 @@
     searchInput.addEventListener("input", () => {
       state.search = searchInput.value.trim().toLowerCase();
       renderItems();
+    });
+
+    shareButton.addEventListener("click", async () => {
+      if (!state.foods.length) {
+        showShareStatus("先添加一些美食，再生成分享链接。");
+        return;
+      }
+
+      const shareLink = createShareLink();
+      const copied = await copyText(shareLink);
+
+      if (copied) {
+        showShareStatus("分享链接已复制，发给别人就能看到这份清单。");
+      } else {
+        showShareStatus("浏览器没有允许自动复制，链接已放在地址栏。");
+        window.history.replaceState(null, "", shareLink);
+      }
     });
 
     items.addEventListener("click", (event) => {
@@ -663,13 +767,11 @@
       }
 
       if (button.dataset.action === "delete") {
-        state.foods = state.foods.filter((item) => item.id !== food.id);
-        saveFoods();
-        render();
+        deleteFood(food.id);
       }
     });
 
-    items.addEventListener("submit", (event) => {
+    items.addEventListener("submit", async (event) => {
       event.preventDefault();
       const form = event.target;
       const card = form.closest(".food-card");
@@ -677,12 +779,11 @@
       if (!food) return;
 
       const formData = new FormData(form);
-      food.status = "eaten";
-      food.eatenDate = String(formData.get("eatenDate") || "");
-      food.rating = Number(formData.get("rating") || 0);
-      saveFoods();
-      state.view = "eaten";
-      render();
+      await markFoodEaten(food.id, {
+        status: "eaten",
+        eatenDate: String(formData.get("eatenDate") || ""),
+        rating: Number(formData.get("rating") || 0)
+      });
     });
 
     function loadFoods() {
@@ -693,8 +794,235 @@
       }
     }
 
+    function loadInitialFoods() {
+      const sharedFoods = readSharedFoods();
+      if (sharedFoods) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(sharedFoods));
+        return sharedFoods;
+      }
+      return loadFoods();
+    }
+
     function saveFoods() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.foods));
+    }
+
+    async function initCloudSync() {
+      if (!hasSupabaseConfig()) {
+        setSyncStatus("local", "本地模式：填入 Supabase 配置后可云同步");
+        return;
+      }
+
+      try {
+        const { createClient } = await import("https://esm.sh/@supabase/supabase-js@2");
+        supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        cloudReady = true;
+        setSyncStatus("cloud", "云同步连接中...");
+        await loadCloudFoods();
+        subscribeToCloudChanges();
+        setSyncStatus("cloud", "云同步已开启");
+      } catch (error) {
+        cloudReady = false;
+        setSyncStatus("error", "云同步暂不可用，已切回本地模式");
+        console.error(error);
+      }
+    }
+
+    function hasSupabaseConfig() {
+      return SUPABASE_URL.startsWith("https://") && SUPABASE_ANON_KEY.length > 20;
+    }
+
+    async function loadCloudFoods() {
+      if (!cloudReady) return;
+      const { data, error } = await supabase
+        .from("foods")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      state.foods = data.map(fromCloudFood);
+      saveFoods();
+      render();
+    }
+
+    function subscribeToCloudChanges() {
+      if (!cloudReady || realtimeChannel) return;
+
+      realtimeChannel = supabase
+        .channel("foods-live")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "foods" },
+          () => loadCloudFoods()
+        )
+        .subscribe();
+    }
+
+    async function addFood(food) {
+      if (!cloudReady) {
+        state.foods.unshift(food);
+        saveFoods();
+        render();
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("foods")
+        .insert(toCloudFood(food))
+        .select()
+        .single();
+
+      if (error) {
+        state.foods.unshift(food);
+        saveFoods();
+        render();
+        setSyncStatus("error", "新增未同步到云端，请检查 Supabase 表设置");
+        return;
+      }
+
+      state.foods.unshift(fromCloudFood(data));
+      saveFoods();
+      render();
+    }
+
+    async function deleteFood(id) {
+      const previousFoods = [...state.foods];
+      state.foods = state.foods.filter((item) => item.id !== id);
+      saveFoods();
+      render();
+
+      if (!cloudReady) return;
+
+      const { error } = await supabase
+        .from("foods")
+        .delete()
+        .eq("id", id);
+
+      if (error) {
+        state.foods = previousFoods;
+        saveFoods();
+        render();
+        setSyncStatus("error", "删除未同步到云端，请稍后再试");
+      }
+    }
+
+    async function markFoodEaten(id, updates) {
+      const food = state.foods.find((item) => item.id === id);
+      if (!food) return;
+
+      Object.assign(food, updates);
+      saveFoods();
+      state.view = "eaten";
+      render();
+
+      if (!cloudReady) return;
+
+      const { error } = await supabase
+        .from("foods")
+        .update({
+          status: updates.status,
+          eaten_date: updates.eatenDate || null,
+          rating: updates.rating || null
+        })
+        .eq("id", id);
+
+      if (error) {
+        setSyncStatus("error", "已吃记录未同步到云端，请稍后再试");
+      }
+    }
+
+    function toCloudFood(food) {
+      return {
+        id: food.id,
+        name: food.name,
+        place: food.place || null,
+        note: food.note || null,
+        status: food.status,
+        created_at: food.createdAt,
+        eaten_date: food.eatenDate || null,
+        rating: food.rating || null
+      };
+    }
+
+    function fromCloudFood(food) {
+      return {
+        id: food.id,
+        name: food.name,
+        place: food.place || "",
+        note: food.note || "",
+        status: food.status || "todo",
+        createdAt: food.created_at || new Date().toISOString(),
+        eatenDate: food.eaten_date || "",
+        rating: food.rating || ""
+      };
+    }
+
+    function setSyncStatus(type, message) {
+      syncText.textContent = message;
+      syncDot.classList.toggle("cloud", type === "cloud");
+      syncDot.classList.toggle("error", type === "error");
+    }
+
+    function createShareLink() {
+      const payload = {
+        version: 1,
+        foods: state.foods
+      };
+      const encoded = encodePayload(payload);
+      return `${window.location.origin}${window.location.pathname}#share=${encoded}`;
+    }
+
+    function readSharedFoods() {
+      const params = new URLSearchParams(window.location.hash.slice(1));
+      const sharedValue = params.get("share");
+      if (!sharedValue) return null;
+
+      try {
+        const payload = decodePayload(sharedValue);
+        if (!payload || !Array.isArray(payload.foods)) return null;
+        return payload.foods.filter((food) => food && typeof food.name === "string");
+      } catch {
+        return null;
+      }
+    }
+
+    function encodePayload(payload) {
+      const json = JSON.stringify(payload);
+      const bytes = new TextEncoder().encode(json);
+      let binary = "";
+      bytes.forEach((byte) => {
+        binary += String.fromCharCode(byte);
+      });
+      return btoa(binary)
+        .replaceAll("+", "-")
+        .replaceAll("/", "_")
+        .replaceAll("=", "");
+    }
+
+    function decodePayload(value) {
+      const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
+      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+      const binary = atob(padded);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      const json = new TextDecoder().decode(bytes);
+      return JSON.parse(json);
+    }
+
+    async function copyText(value) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    function showShareStatus(message) {
+      shareStatus.textContent = message;
+      window.clearTimeout(showShareStatus.timer);
+      showShareStatus.timer = window.setTimeout(() => {
+        shareStatus.textContent = "";
+      }, 4800);
     }
 
     function render() {
@@ -843,6 +1171,7 @@
     }
 
     render();
+    initCloudSync();
   </script>
 </body>
 </html>
