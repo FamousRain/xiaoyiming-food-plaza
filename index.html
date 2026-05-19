@@ -270,22 +270,9 @@
       width: 100%;
     }
 
-    .share-row {
+    .sync-row {
       display: grid;
       gap: 7px;
-    }
-
-    .share-row .btn {
-      min-height: 40px;
-      background: linear-gradient(135deg, var(--blue), var(--mint));
-      box-shadow: 0 10px 18px rgba(82, 167, 223, 0.2);
-    }
-
-    .share-status {
-      min-height: 18px;
-      color: var(--muted);
-      font-size: 13px;
-      text-align: right;
     }
 
     .sync-status {
@@ -314,6 +301,71 @@
     .sync-dot.error {
       background: var(--accent);
       box-shadow: 0 0 0 4px rgba(255, 107, 107, 0.18);
+    }
+
+    .ocr-box {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 18px;
+      padding: 14px;
+      border: 2px dashed #f3c9b3;
+      border-radius: 16px;
+      background: linear-gradient(135deg, #fff9dd, #fff3f8);
+    }
+
+    .ocr-box h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.25;
+    }
+
+    .ocr-actions {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 9px;
+      align-items: center;
+    }
+
+    .file-picker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 40px;
+      border: 2px solid #f2cfbd;
+      border-radius: 14px;
+      color: var(--ink);
+      background: #fffefa;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .file-picker input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .ocr-preview {
+      display: none;
+      width: 100%;
+      max-height: 210px;
+      object-fit: contain;
+      border: 2px solid #f2cfbd;
+      border-radius: 14px;
+      background: #fffefa;
+    }
+
+    .ocr-preview.show {
+      display: block;
+    }
+
+    .ocr-status {
+      min-height: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
     }
 
     .tabs {
@@ -521,10 +573,6 @@
         min-width: 0;
       }
 
-      .share-status {
-        text-align: left;
-      }
-
       .sync-status {
         justify-content: flex-start;
       }
@@ -559,6 +607,10 @@
       }
 
       .eat-form {
+        grid-template-columns: 1fr;
+      }
+
+      .ocr-actions {
         grid-template-columns: 1fr;
       }
     }
@@ -598,16 +650,7 @@
             <span>平均评分</span>
           </div>
         </div>
-        <div class="share-row">
-          <button class="btn" id="shareButton" type="button">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-              <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path>
-              <path d="M16 6l-4-4-4 4"></path>
-              <path d="M12 2v13"></path>
-            </svg>
-            复制分享链接
-          </button>
-          <div class="share-status" id="shareStatus" aria-live="polite"></div>
+        <div class="sync-row">
           <div class="sync-status" id="syncStatus" aria-live="polite">
             <span class="sync-dot" id="syncDot"></span>
             <span id="syncText">本地模式</span>
@@ -620,6 +663,28 @@
       <aside class="panel">
         <div class="section-title">
           <h2>新增小吃摊</h2>
+        </div>
+        <div class="ocr-box">
+          <h3>截图识别</h3>
+          <div class="ocr-actions">
+            <label class="file-picker" for="ocrInput">
+              上传团购截图
+              <input id="ocrInput" type="file" accept="image/*">
+            </label>
+            <button class="btn" id="ocrButton" type="button" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M4 7V5a1 1 0 0 1 1-1h2"></path>
+                <path d="M17 4h2a1 1 0 0 1 1 1v2"></path>
+                <path d="M20 17v2a1 1 0 0 1-1 1h-2"></path>
+                <path d="M7 20H5a1 1 0 0 1-1-1v-2"></path>
+                <path d="M8 12h8"></path>
+                <path d="M8 16h5"></path>
+              </svg>
+              识别
+            </button>
+          </div>
+          <img class="ocr-preview" id="ocrPreview" alt="团购截图预览">
+          <div class="ocr-status" id="ocrStatus" aria-live="polite">上传截图后，可以自动填入名称和地点。</div>
         </div>
         <form id="addForm">
           <div class="field">
@@ -690,6 +755,8 @@
     };
 
     const addForm = document.querySelector("#addForm");
+    const foodNameInput = document.querySelector("#foodName");
+    const foodPlaceInput = document.querySelector("#foodPlace");
     const items = document.querySelector("#items");
     const tabs = document.querySelectorAll(".tab");
     const listTitle = document.querySelector("#listTitle");
@@ -697,11 +764,15 @@
     const todoCount = document.querySelector("#todoCount");
     const eatenCount = document.querySelector("#eatenCount");
     const avgRating = document.querySelector("#avgRating");
-    const shareButton = document.querySelector("#shareButton");
-    const shareStatus = document.querySelector("#shareStatus");
     const syncStatus = document.querySelector("#syncStatus");
     const syncDot = document.querySelector("#syncDot");
     const syncText = document.querySelector("#syncText");
+    const ocrInput = document.querySelector("#ocrInput");
+    const ocrButton = document.querySelector("#ocrButton");
+    const ocrPreview = document.querySelector("#ocrPreview");
+    const ocrStatus = document.querySelector("#ocrStatus");
+
+    let ocrFile = null;
 
     addForm.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -737,20 +808,46 @@
       renderItems();
     });
 
-    shareButton.addEventListener("click", async () => {
-      if (!state.foods.length) {
-        showShareStatus("先添加一些美食，再生成分享链接。");
+    ocrInput.addEventListener("change", () => {
+      const [file] = ocrInput.files || [];
+      ocrFile = file || null;
+      ocrButton.disabled = !ocrFile;
+
+      if (!ocrFile) {
+        ocrPreview.classList.remove("show");
+        ocrPreview.removeAttribute("src");
+        setOcrStatus("上传截图后，可以自动填入名称和地点。");
         return;
       }
 
-      const shareLink = createShareLink();
-      const copied = await copyText(shareLink);
+      ocrPreview.src = URL.createObjectURL(ocrFile);
+      ocrPreview.classList.add("show");
+      setOcrStatus("截图已选好，点击识别。");
+    });
 
-      if (copied) {
-        showShareStatus("分享链接已复制，发给别人就能看到这份清单。");
-      } else {
-        showShareStatus("浏览器没有允许自动复制，链接已放在地址栏。");
-        window.history.replaceState(null, "", shareLink);
+    ocrButton.addEventListener("click", async () => {
+      if (!ocrFile) return;
+
+      ocrButton.disabled = true;
+      setOcrStatus("正在识别截图，第一次会稍慢一点...");
+
+      try {
+        const text = await recognizeImageText(ocrFile);
+        const result = extractFoodInfo(text);
+
+        if (result.name) foodNameInput.value = result.name;
+        if (result.place) foodPlaceInput.value = result.place;
+
+        if (result.name || result.place) {
+          setOcrStatus(`已识别：${result.name || "名称待补"} / ${result.place || "地点待补"}`);
+        } else {
+          setOcrStatus("识别完成，但没找到明显的名称或地址，可以换一张更清晰的截图。");
+        }
+      } catch (error) {
+        console.error(error);
+        setOcrStatus("识别失败，请检查网络后重试，或手动填写。");
+      } finally {
+        ocrButton.disabled = false;
       }
     });
 
@@ -795,11 +892,6 @@
     }
 
     function loadInitialFoods() {
-      const sharedFoods = readSharedFoods();
-      if (sharedFoods) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(sharedFoods));
-        return sharedFoods;
-      }
       return loadFoods();
     }
 
@@ -963,66 +1055,98 @@
       syncDot.classList.toggle("error", type === "error");
     }
 
-    function createShareLink() {
-      const payload = {
-        version: 1,
-        foods: state.foods
+    async function recognizeImageText(file) {
+      const { createWorker } = await import("https://cdn.jsdelivr.net/npm/tesseract.js@5/+esm");
+      const worker = await createWorker("chi_sim+eng");
+
+      try {
+        const {
+          data: { text }
+        } = await worker.recognize(file);
+        return text || "";
+      } finally {
+        await worker.terminate();
+      }
+    }
+
+    function extractFoodInfo(text) {
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+
+      return {
+        name: findFoodName(lines),
+        place: findAddress(lines)
       };
-      const encoded = encodePayload(payload);
-      return `${window.location.origin}${window.location.pathname}#share=${encoded}`;
     }
 
-    function readSharedFoods() {
-      const params = new URLSearchParams(window.location.hash.slice(1));
-      const sharedValue = params.get("share");
-      if (!sharedValue) return null;
+    function findFoodName(lines) {
+      const foodWords = /餐|套餐|双人|单人|火锅|烧烤|烤肉|自助|炒菜|小吃|牛|羊|猪|鸡|鸭|鱼|虾|蟹|肉|饭|面|粉|米线|汉堡|披萨|寿司|甜品|蛋糕|奶茶|咖啡|饮品|串|锅|煲|粥|饺|包|店/;
+      const candidates = lines
+        .filter((line) => isUsefulLine(line) && !looksLikeAddress(line))
+        .map((line) => cleanNameLine(line))
+        .filter((line) => line.length >= 2 && line.length <= 40);
 
-      try {
-        const payload = decodePayload(sharedValue);
-        if (!payload || !Array.isArray(payload.foods)) return null;
-        return payload.foods.filter((food) => food && typeof food.name === "string");
-      } catch {
-        return null;
+      const foodCandidate = candidates.find((line) => foodWords.test(line));
+      if (foodCandidate) return foodCandidate;
+
+      return candidates
+        .sort((a, b) => scoreNameLine(b) - scoreNameLine(a))[0] || "";
+    }
+
+    function findAddress(lines) {
+      const addressLabel = /(地址|位置|门店地址|商家地址|到店|导航|营业地址|详细地址)[:：]?\s*(.+)?/;
+      for (const line of lines) {
+        const match = line.match(addressLabel);
+        if (match) {
+          const value = cleanAddressLine(match[2] || line.replace(addressLabel, ""));
+          if (value.length >= 4) return value;
+        }
       }
+
+      const addressCandidate = lines
+        .filter((line) => isUsefulLine(line) && looksLikeAddress(line))
+        .map(cleanAddressLine)
+        .find((line) => line.length >= 4 && line.length <= 70);
+
+      return addressCandidate || "";
     }
 
-    function encodePayload(payload) {
-      const json = JSON.stringify(payload);
-      const bytes = new TextEncoder().encode(json);
-      let binary = "";
-      bytes.forEach((byte) => {
-        binary += String.fromCharCode(byte);
-      });
-      return btoa(binary)
-        .replaceAll("+", "-")
-        .replaceAll("/", "_")
-        .replaceAll("=", "");
+    function isUsefulLine(line) {
+      if (!line || line.length < 2) return false;
+      if (/^[\d\s.,:：\-￥¥/]+$/.test(line)) return false;
+      if (/券|优惠|须知|有效期|购买|退款|销量|已售|评分|营业时间|电话|预约|二维码|订单|原价|现价|¥|￥/.test(line)) return false;
+      return true;
     }
 
-    function decodePayload(value) {
-      const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
-      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-      const binary = atob(padded);
-      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-      const json = new TextDecoder().decode(bytes);
-      return JSON.parse(json);
+    function looksLikeAddress(line) {
+      return /省|市|区|县|镇|乡|村|路|街|巷|弄|号|楼|层|座|栋|广场|商场|中心|大厦|门店|附近|地铁|公交/.test(line);
     }
 
-    async function copyText(value) {
-      try {
-        await navigator.clipboard.writeText(value);
-        return true;
-      } catch {
-        return false;
-      }
+    function cleanNameLine(line) {
+      return line
+        .replace(/^(团购|套餐|美团|大众点评|抖音|商家|门店)[:：\s-]*/g, "")
+        .replace(/[|｜·•]+/g, " ")
+        .trim();
     }
 
-    function showShareStatus(message) {
-      shareStatus.textContent = message;
-      window.clearTimeout(showShareStatus.timer);
-      showShareStatus.timer = window.setTimeout(() => {
-        shareStatus.textContent = "";
-      }, 4800);
+    function cleanAddressLine(line) {
+      return line
+        .replace(/^(地址|位置|门店地址|商家地址|到店|导航|营业地址|详细地址)[:：\s-]*/g, "")
+        .replace(/(复制|查看地图|导航|详情)$/g, "")
+        .trim();
+    }
+
+    function scoreNameLine(line) {
+      let score = Math.min(line.length, 24);
+      if (/餐|套餐|锅|肉|饭|面|粉|甜品|奶茶|咖啡|店/.test(line)) score += 10;
+      if (/^\d/.test(line)) score -= 8;
+      return score;
+    }
+
+    function setOcrStatus(message) {
+      ocrStatus.textContent = message;
     }
 
     function render() {
