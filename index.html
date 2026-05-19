@@ -511,7 +511,7 @@
     .eat-form {
       display: none;
       grid-column: 1 / -1;
-      grid-template-columns: repeat(2, minmax(120px, 1fr)) auto;
+      grid-template-columns: repeat(2, minmax(120px, 1fr));
       gap: 10px;
       padding-top: 12px;
       border-top: 2px dashed #f3c9b3;
@@ -519,6 +519,41 @@
 
     .food-card.open .eat-form {
       display: grid;
+    }
+
+    .eat-form .btn {
+      align-self: end;
+    }
+
+    .photo-upload {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      border: 2px solid #f2cfbd;
+      border-radius: 14px;
+      color: var(--ink);
+      background: #fffefa;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .photo-upload input {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .food-photo {
+      width: min(220px, 100%);
+      margin-top: 10px;
+      border: 2px solid #f3d0bd;
+      border-radius: 16px;
+      object-fit: cover;
+      aspect-ratio: 4 / 3;
+      background: #fff5d7;
     }
 
     .rating {
@@ -789,7 +824,9 @@
         status: "todo",
         createdAt: new Date().toISOString(),
         eatenDate: "",
-        rating: ""
+        rating: "",
+        amount: "",
+        photo: ""
       };
 
       addForm.reset();
@@ -876,10 +913,16 @@
       if (!food) return;
 
       const formData = new FormData(form);
+      const amount = String(formData.get("amount") || "").trim();
+      const photoFile = formData.get("photo");
+      const photo = photoFile && photoFile.size ? await imageFileToDataUrl(photoFile) : food.photo || "";
+
       await markFoodEaten(food.id, {
         status: "eaten",
         eatenDate: String(formData.get("eatenDate") || ""),
-        rating: Number(formData.get("rating") || 0)
+        rating: Number(formData.get("rating") || 0),
+        amount: amount ? Number(amount) : "",
+        photo
       });
     });
 
@@ -1014,7 +1057,9 @@
         .update({
           status: updates.status,
           eaten_date: updates.eatenDate || null,
-          rating: updates.rating || null
+          rating: updates.rating || null,
+          amount: updates.amount || null,
+          photo: updates.photo || null
         })
         .eq("id", id);
 
@@ -1032,7 +1077,9 @@
         status: food.status,
         created_at: food.createdAt,
         eaten_date: food.eatenDate || null,
-        rating: food.rating || null
+        rating: food.rating || null,
+        amount: food.amount || null,
+        photo: food.photo || null
       };
     }
 
@@ -1045,7 +1092,9 @@
         status: food.status || "todo",
         createdAt: food.created_at || new Date().toISOString(),
         eatenDate: food.eaten_date || "",
-        rating: food.rating || ""
+        rating: food.rating || "",
+        amount: food.amount || "",
+        photo: food.photo || ""
       };
     }
 
@@ -1199,7 +1248,8 @@
       const meta = [
         food.place ? `地点：${escapeHtml(food.place)}` : "",
         food.status === "eaten" && food.eatenDate ? `日期：${formatDate(food.eatenDate)}` : "",
-        food.status === "eaten" && food.rating ? `评分：<span class="rating">${food.rating}/5</span>` : ""
+        food.status === "eaten" && food.rating ? `评分：<span class="rating">${food.rating}/5</span>` : "",
+        food.status === "eaten" && food.amount ? `消费：￥${escapeHtml(formatAmount(food.amount))}` : ""
       ].filter(Boolean).map((item) => `<span>${item}</span>`).join("");
 
       card.innerHTML = `
@@ -1210,6 +1260,7 @@
           </div>
           <div class="meta">${meta || "还没有补充地点"}</div>
           ${food.note ? `<p class="note">${escapeHtml(food.note)}</p>` : ""}
+          ${food.status === "eaten" && food.photo ? `<img class="food-photo" src="${escapeHtml(food.photo)}" alt="${escapeHtml(food.name)}照片">` : ""}
         </div>
         <div class="actions">
           ${food.status === "todo" ? `
@@ -1253,6 +1304,17 @@
               <option value="1">1 分</option>
             </select>
           </div>
+          <div class="field">
+            <label>消费金额</label>
+            <input type="number" name="amount" min="0" step="0.01" placeholder="例如：88.5">
+          </div>
+          <div class="field">
+            <label>美食照片</label>
+            <label class="photo-upload">
+              上传照片
+              <input type="file" name="photo" accept="image/*">
+            </label>
+          </div>
           <button class="btn" type="submit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M20 6 9 17l-5-5"></path>
@@ -1283,6 +1345,35 @@
       if (!value) return "";
       const [year, month, day] = value.split("-");
       return `${year}.${month}.${day}`;
+    }
+
+    function formatAmount(value) {
+      const amount = Number(value);
+      if (!Number.isFinite(amount)) return "";
+      return amount % 1 === 0 ? String(amount) : amount.toFixed(2);
+    }
+
+    function imageFileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const image = new Image();
+          image.onload = () => {
+            const maxSize = 900;
+            const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.max(1, Math.round(image.width * scale));
+            canvas.height = Math.max(1, Math.round(image.height * scale));
+            const context = canvas.getContext("2d");
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/jpeg", 0.78));
+          };
+          image.onerror = reject;
+          image.src = String(reader.result || "");
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
     }
 
     function escapeHtml(value) {
