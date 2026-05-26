@@ -8,7 +8,8 @@ create table if not exists public.foods (
   eaten_date date,
   rating integer check (rating between 1 and 5),
   amount numeric(10, 2) check (amount >= 0),
-  photo text
+  photo text,
+  review text
 );
 
 alter table public.foods
@@ -16,6 +17,9 @@ add column if not exists amount numeric(10, 2) check (amount >= 0);
 
 alter table public.foods
 add column if not exists photo text;
+
+alter table public.foods
+add column if not exists review text;
 
 alter table public.foods enable row level security;
 

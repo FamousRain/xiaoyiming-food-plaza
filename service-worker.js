@@ -1,4 +1,4 @@
-const CACHE_NAME = "xiaoyiming-food-plaza-v1";
+const CACHE_NAME = "xiaoyiming-food-plaza-v2";
 const APP_SHELL = [
   "./",
   "./index.html",

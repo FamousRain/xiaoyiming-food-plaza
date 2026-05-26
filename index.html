@@ -490,6 +490,16 @@
       overflow-wrap: anywhere;
     }
 
+    .review {
+      margin: 10px 0 0;
+      padding: 10px 12px;
+      border-radius: 14px;
+      color: #5a433b;
+      background: #fff5d7;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+
     .actions {
       display: flex;
       align-items: start;
@@ -530,6 +540,10 @@
 
     .eat-form .btn {
       align-self: end;
+    }
+
+    .eat-form .wide {
+      grid-column: 1 / -1;
     }
 
     .photo-upload {
@@ -833,7 +847,8 @@
         eatenDate: "",
         rating: "",
         amount: "",
-        photo: ""
+        photo: "",
+        review: ""
       };
 
       addForm.reset();
@@ -907,6 +922,10 @@
         card.classList.toggle("open");
       }
 
+      if (button.dataset.action === "openEdit") {
+        card.classList.toggle("open");
+      }
+
       if (button.dataset.action === "delete") {
         deleteFood(food.id);
       }
@@ -929,7 +948,8 @@
         eatenDate: String(formData.get("eatenDate") || ""),
         rating: Number(formData.get("rating") || 0),
         amount: amount ? Number(amount) : "",
-        photo
+        photo,
+        review: String(formData.get("review") || "").trim()
       });
     });
 
@@ -1066,7 +1086,8 @@
           eaten_date: updates.eatenDate || null,
           rating: updates.rating || null,
           amount: updates.amount || null,
-          photo: updates.photo || null
+          photo: updates.photo || null,
+          review: updates.review || null
         })
         .eq("id", id);
 
@@ -1086,7 +1107,8 @@
         eaten_date: food.eatenDate || null,
         rating: food.rating || null,
         amount: food.amount || null,
-        photo: food.photo || null
+        photo: food.photo || null,
+        review: food.review || null
       };
     }
 
@@ -1101,7 +1123,8 @@
         eatenDate: food.eaten_date || "",
         rating: food.rating || "",
         amount: food.amount || "",
-        photo: food.photo || ""
+        photo: food.photo || "",
+        review: food.review || ""
       };
     }
 
@@ -1231,7 +1254,7 @@
       const filtered = state.foods
         .filter((food) => food.status === state.view)
         .filter((food) => {
-          const target = `${food.name} ${food.place} ${food.note}`.toLowerCase();
+          const target = `${food.name} ${food.place} ${food.note} ${food.review || ""}`.toLowerCase();
           return target.includes(state.search);
         });
 
@@ -1267,6 +1290,7 @@
           </div>
           <div class="meta">${meta || "还没有补充地点"}</div>
           ${food.note ? `<p class="note">${escapeHtml(food.note)}</p>` : ""}
+          ${food.status === "eaten" && food.review ? `<p class="review">${escapeHtml(food.review)}</p>` : ""}
           ${food.status === "eaten" && food.photo ? `<img class="food-photo" src="${escapeHtml(food.photo)}" alt="${escapeHtml(food.name)}照片">` : ""}
         </div>
         <div class="actions">
@@ -1276,7 +1300,14 @@
                 <path d="M20 6 9 17l-5-5"></path>
               </svg>
             </button>
-          ` : ""}
+          ` : `
+            <button class="icon-btn" type="button" data-action="openEdit" title="编辑已吃记录" aria-label="编辑已吃记录">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M12 20h9"></path>
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+              </svg>
+            </button>
+          `}
           <button class="icon-btn" type="button" data-action="delete" title="删除" aria-label="删除">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M3 6h18"></path>
@@ -1285,48 +1316,57 @@
             </svg>
           </button>
         </div>
-        ${food.status === "todo" ? createEatForm() : ""}
+        ${food.status === "todo" ? createEatForm(food, "create") : createEatForm(food, "edit")}
       `;
 
       const dateInput = card.querySelector('input[name="eatenDate"]');
-      if (dateInput) dateInput.valueAsDate = new Date();
+      if (dateInput && !dateInput.value) dateInput.valueAsDate = new Date();
 
       return card;
     }
 
-    function createEatForm() {
+    function createEatForm(food = {}, mode = "create") {
+      const rating = String(food.rating || "5");
+      const amount = food.amount ? formatAmount(food.amount) : "";
+      const review = food.review || "";
+      const buttonText = mode === "edit" ? "保存补充" : "收进回忆";
+
       return `
         <form class="eat-form">
           <div class="field">
             <label>吃过日期</label>
-            <input type="date" name="eatenDate" required>
+            <input type="date" name="eatenDate" value="${escapeHtml(food.eatenDate || "")}" required>
           </div>
           <div class="field">
             <label>评分</label>
             <select name="rating" required>
-              <option value="5">5 分</option>
-              <option value="4">4 分</option>
-              <option value="3">3 分</option>
-              <option value="2">2 分</option>
-              <option value="1">1 分</option>
+              <option value="5" ${rating === "5" ? "selected" : ""}>5 分</option>
+              <option value="4" ${rating === "4" ? "selected" : ""}>4 分</option>
+              <option value="3" ${rating === "3" ? "selected" : ""}>3 分</option>
+              <option value="2" ${rating === "2" ? "selected" : ""}>2 分</option>
+              <option value="1" ${rating === "1" ? "selected" : ""}>1 分</option>
             </select>
           </div>
           <div class="field">
             <label>消费金额</label>
-            <input type="number" name="amount" min="0" step="0.01" placeholder="例如：88.5">
+            <input type="number" name="amount" min="0" step="0.01" value="${escapeHtml(amount)}" placeholder="例如：88.5">
           </div>
           <div class="field">
             <label>美食照片</label>
             <label class="photo-upload">
-              上传照片
+              ${food.photo ? "更换照片" : "上传照片"}
               <input type="file" name="photo" accept="image/*">
             </label>
+          </div>
+          <div class="field wide">
+            <label>评价</label>
+            <textarea name="review" maxlength="220" placeholder="味道、环境、服务、下次还想不想吃都可以写">${escapeHtml(review)}</textarea>
           </div>
           <button class="btn" type="submit">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
               <path d="M20 6 9 17l-5-5"></path>
             </svg>
-            收进回忆
+            ${buttonText}
           </button>
         </form>
       `;
